@@ -45,15 +45,30 @@ DEFAULT_SCORECUT = 0.75
 
 logging.info("Proccessing for " + IP_ADDRESS)
 
-duration = int(RUN_HOUR * 3600 * 24)
+duration = config("FRAMES", cast=int, default=2000)
 
 
-logging.info("Total accepeted frames required" + str(duration))
+logging.info("Total accepeted frames required: " + str(duration))
+
+
+logging.info("Initialising Blacklist")
+BLACKLIST_DIR = Path("blacklist") 
+BLACKLIST_IMG = []
+BLACKLIST_THRESHOLD = 0.75
+if BLACKLIST_DIR.exists():
+    for p in  BLACKLIST_DIR.glob("**/*"):
+        if p.is_file():
+            BLACKLIST_IMG.append(cv2.imread(str(p), cv2.COLOR_BGR2GRAY))
+
+logging.info("Backlist count:" + str(len(BLACKLIST_IMG)))
+
+
 
 vidcap = cv2.VideoCapture(VIDEO_SRC)
 length = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
 success, image = vidcap.read()
 grayB = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
 
 i = 0
 saved_frame_count = 0
@@ -61,8 +76,9 @@ saved_frame_count = 0
 percent = round(i/length, 3)
 
 score_cut = DEFAULT_SCORECUT
-STREAM_ERROR_MAX = 10
+STREAM_ERROR_MAX = 20
 stream_error_count = 0
+
 
 try:
     while(saved_frame_count < duration):
@@ -76,8 +92,8 @@ try:
 
         success, image = vidcap.read()
         if not success:
-            logging.warning("Stream ended or error!")
-            time.sleep(1)
+            logging.warning(f"Stream ended or error! {stream_error_count}")
+            time.sleep(stream_error_count//2)
             stream_error_count +=1
             if stream_error_count<STREAM_ERROR_MAX:
                 continue
@@ -90,8 +106,18 @@ try:
         (score, diff) = compare_ssim(grayA, grayB, full=True)
         if score_cut <= score:
             continue
+        
+        blacklist_score = 0
+        for img in BLACKLIST_IMG:
+            imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            (score, diff) = compare_ssim(grayA, imgGray, full=True)
+            blacklist_score = (blacklist_score+score)/2
 
-        logging.info(f"Saved frame {i} with %.4f similarity to previous saved image" % (score*100))
+        if blacklist_score > BLACKLIST_THRESHOLD:
+            logging.warning("Frame blacklisted, skipping. Blacklist_Score=" + str(blacklist_score))
+            continue
+
+        logging.info(f"Saved frame {i} with %.4f similarity. BScore=%.2f count={saved_frame_count}" % (score*100 , blacklist_score*100))
 
         outfile = FRAME_OUT+str(i)+".jpg"
         cv2.imwrite(outfile, image)
