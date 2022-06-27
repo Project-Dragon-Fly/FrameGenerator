@@ -1,0 +1,26 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ production ]
+    
+env:
+  VM_SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+  SSH_HOST: ${{ secrets.DEPLOY_SERVER }} 
+  SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }} 
+  
+    
+jobs:
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Deploy to Instance
+      run: |
+        mkdir -p ~/.ssh/
+        echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+        eval `ssh-agent -s`
+        ssh-add <(echo "$VM_SSH_PRIVATE_KEY")
+        ssh $SSH_HOST " ~/update_framegen.sh"
